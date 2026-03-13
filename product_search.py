@@ -47,12 +47,15 @@ def search_products(query):
         if not link:
             link = p.get("product_page_url")
 
+        rating = p.get("product_rating")
+
         products.append({
             "title": title,
             "price": price,
             "image": photo,
             "store": store,
-            "link": link
+            "link": link,
+            "rating": rating
         })
 
     return products

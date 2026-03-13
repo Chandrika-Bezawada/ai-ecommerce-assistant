@@ -1,22 +1,24 @@
 import streamlit as st
 import pandas as pd
+import time
 from product_search import search_products
-from compare import compare_products
+from ai_agent import choose_best_product, shopping_chat
 
 st.set_page_config(page_title="AI Shopping Agent")
 
 st.title("🛒 AI E-Commerce Product Discovery Agent")
 
-
-# SESSION STATE
+# SESSION STATES
 if "cart" not in st.session_state:
     st.session_state.cart = []
 
 if "products" not in st.session_state:
     st.session_state.products = []
 
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
-# SEARCH PRODUCT
+# PRODUCT SEARCH
 query = st.text_input("Search for a product")
 
 if st.button("Search"):
@@ -34,42 +36,36 @@ if st.button("Search"):
             st.session_state.products = products
 
 
-# DISPLAY PRODUCTS
+# DISPLAY PRODUCTS (GRID STYLE)
 if st.session_state.products:
 
     st.subheader("Products Found")
 
+    cols = st.columns(3)  # 3 products per row
+
     for i, p in enumerate(st.session_state.products):
 
-        cols = st.columns([1,2])
+        with cols[i % 3]:
 
-        with cols[0]:
             if p["image"]:
                 st.image(p["image"], width="stretch")
 
-        with cols[1]:
-
             st.write("###", p["title"])
             st.write("💰 Price:", p["price"])
+            st.write("⭐ Rating:", p.get("rating","N/A"))
             st.write("🏬 Store:", p["store"])
 
-            col1, col2 = st.columns(2)
+            if p["link"]:
+                st.markdown(
+                    f'<a href="{p["link"]}" target="_blank">🛒 Buy Now</a>',
+                    unsafe_allow_html=True
+                )
 
-            # BUY NOW
-            with col1:
-                if p["link"]:
-                    st.markdown(
-                        f'<a href="{p["link"]}" target="_blank">🛒 Buy Now</a>',
-                        unsafe_allow_html=True
-                    )
+            if st.button("Add to Cart", key=i):
+                st.session_state.cart.append(p)
+                st.success("Added to cart!")
 
-            # ADD TO CART
-            with col2:
-                if st.button("Add to Cart", key=i):
-                    st.session_state.cart.append(p)
-                    st.success("Added to cart!")
-
-        st.write("---")
+            st.write("---")
 
 
 # PRODUCT COMPARISON TABLE
@@ -89,6 +85,7 @@ if st.session_state.products:
         comparison_data.append({
             "Product": p["title"],
             "Price": p["price"],
+            "Rating": p.get("rating","N/A"),
             "Store": p["store"],
             "Product Link": p["link"],
             "price_value": numeric_price
@@ -96,10 +93,8 @@ if st.session_state.products:
 
     df = pd.DataFrame(comparison_data)
 
-    # SORT BY PRICE
     df = df.sort_values(by="price_value")
 
-    # REMOVE HELPER COLUMN
     df = df.drop(columns=["price_value"])
 
     st.data_editor(
@@ -115,28 +110,63 @@ if st.session_state.products:
     )
 
 
-# BEST PRODUCT RECOMMENDATION
+# AI RECOMMENDATION
+if st.session_state.products and len(st.session_state.products) >= 3:
+
+    st.subheader("⭐ AI Best Product Recommendation")
+
+    top_products = st.session_state.products[:3]
+
+    with st.spinner("AI analyzing products..."):
+
+        ai_result = choose_best_product(top_products)
+
+    st.info("🤖 AI Decision")
+    st.write(ai_result)
+
+
+# 💬 AI CHAT ASSISTANT
 if st.session_state.products:
 
-    best_product, reason = compare_products(st.session_state.products)
+    st.subheader("💬 AI Shopping Assistant")
 
-    if best_product:
+    # Display previous chat messages
+    for chat in st.session_state.chat_history:
 
-        st.subheader("⭐ Best Product Recommendation")
+        with st.chat_message("user"):
+            st.write(chat["user"])
 
-        cols = st.columns([1,2])
+        with st.chat_message("assistant"):
+            st.write(chat["ai"])
 
-        with cols[0]:
-            if best_product["image"]:
-                st.image(best_product["image"], width="stretch")
+    # Chat input
+    user_question = st.chat_input("Ask something about the products...")
 
-        with cols[1]:
+    if user_question:
 
-            st.write("###", best_product["title"])
-            st.write("💰 Price:", best_product["price"])
-            st.write("🏬 Store:", best_product["store"])
+        with st.chat_message("user"):
+            st.write(user_question)
 
-            st.success(reason)
+        with st.spinner("AI thinking..."):
+
+            answer = shopping_chat(
+                user_question,
+                st.session_state.products
+            )
+
+        # Typing animation
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            typed_text = ""
+
+            for char in answer:
+                typed_text += char
+                message_placeholder.markdown(typed_text)
+                time.sleep(0.01)
+
+        st.session_state.chat_history.append(
+            {"user": user_question, "ai": answer}
+        )
 
 
 # CART SIDEBAR
@@ -150,7 +180,7 @@ else:
 
     total_price = 0
 
-    for idx, item in enumerate(st.session_state.cart):
+    for idx,item in enumerate(st.session_state.cart):
 
         st.sidebar.write(f"**{item['title']}**")
         st.sidebar.write(item["price"])
